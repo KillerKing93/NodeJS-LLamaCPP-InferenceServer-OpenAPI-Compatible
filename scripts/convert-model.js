@@ -46,6 +46,40 @@ const converterOverride = process.env.LLAMACPP_CONVERTER || '';
     if (tfSavedModel || tfVariables) {
       failUnsupportedTF(repoId, modelDir);
     }
+    
+    // Detect multimodal artifacts (image/video) typical for Qwen-VL repos
+    // e.g. presence of preprocessor_config.json / video_preprocessor_config.json
+    // or config.json containing vision/multimodal keys.
+    const mmArtifactFiles = [
+      'preprocessor_config.json',
+      'video_preprocessor_config.json',
+      'image_processor.json',
+    ];
+    const hasMMArtifact = hasAny(modelDir, mmArtifactFiles);
+    
+    const configJsonPath = path.join(modelDir, 'config.json');
+    let hasMMConfig = false;
+    if (fs.existsSync(configJsonPath)) {
+      try {
+        const cfgRaw = fs.readFileSync(configJsonPath, 'utf8');
+        const cfg = JSON.parse(cfgRaw);
+        if (
+          cfg.vision_config ||
+          cfg.mm_projector ||
+          cfg.mm_projector_type ||
+          cfg.mm_vision_tower ||
+          typeof cfg.image_token_index !== 'undefined'
+        ) {
+          hasMMConfig = true;
+        }
+      } catch {
+        // ignore parse errors and continue
+      }
+    }
+    
+    if (hasMMArtifact || hasMMConfig) {
+      failUnsupportedMultimodal(repoId, modelDir);
+    }
 
     // Detect Transformers-style files (config.json, tokenizer.json, pytorch_model*.bin / safetensors)
     const transformersLikely = hasAny(modelDir, [
@@ -179,6 +213,19 @@ function failUnsupportedTF(repo, dir) {
     '  - Use a text-only Qwen/Qwen2/Qwen2.5 model with Transformers (PyTorch) weights for GGUF conversion.',
     '  - Or download a prebuilt GGUF compatible with llama.cpp.',
     '  - If you require VLM, consult llama.cpp upstream for current multimodal support status.',
+  ].join('\n');
+  throw new Error(msg);
+}
+
+function failUnsupportedMultimodal(repo, dir) {
+  const msg = [
+    `Detected multimodal (image/video) artifacts in: ${dir}`,
+    `The model "${repo}" appears to be a VLM (e.g. presence of preprocessor/video processor or vision configs).`,
+    'The llama.cpp GGUF converter targets text-only LLM weights and does not support these multimodal formats.',
+    'Actionable alternatives:',
+    '  - Use a text-only Qwen/Qwen2/Qwen2.5 model in Transformers (PyTorch) format to convert to GGUF.',
+    '  - Or use a prebuilt GGUF from a trusted source (e.g., TheBloke/bartowski releases).',
+    '  - If you must run this VL model, use a Transformers runtime (Python) instead of llama.cpp.',
   ].join('\n');
   throw new Error(msg);
 }

@@ -60,23 +60,27 @@ const ggufPath = path.join(modelDir, outGgufName);
     banner('DOWNLOAD PHASE');
     runNodeScript('scripts/download-model.js', [repoId], { env: dlEnv });
 
-    // Step 2: Convert to GGUF
-    ensureScriptExists('scripts/convert-model.js');
-    const cvEnv = {
-      ...process.env,
-      MODEL_REPO_ID: repoId,
-      MODELS_DIR: modelsRoot,
-      OUT_GGUF_NAME: outGgufName,
-    };
+    // Step 2: If GGUF exists after download, skip conversion
+    if (fs.existsSync(ggufPath)) {
+      banner('SKIP CONVERSION');
+      info(`Prebuilt GGUF detected at: ${ggufPath}`);
+    } else {
+      // Convert to GGUF
+      ensureScriptExists('scripts/convert-model.js');
+      const cvEnv = {
+        ...process.env,
+        MODEL_REPO_ID: repoId,
+        MODELS_DIR: modelsRoot,
+        OUT_GGUF_NAME: outGgufName,
+      };
 
-    banner('CONVERSION PHASE');
-    runNodeScript('scripts/convert-model.js', [repoId], { env: cvEnv });
+      banner('CONVERSION PHASE');
+      runNodeScript('scripts/convert-model.js', [repoId], { env: cvEnv });
 
-    // Verify
-    if (!fs.existsSync(ggufPath)) {
-      throw new Error(
-        `Conversion reported success but GGUF not found at: ${ggufPath}`
-      );
+      // Verify
+      if (!fs.existsSync(ggufPath)) {
+        throw new Error(`Conversion reported success but GGUF not found at: ${ggufPath}`);
+      }
     }
 
     banner('MODEL SETUP COMPLETE');
